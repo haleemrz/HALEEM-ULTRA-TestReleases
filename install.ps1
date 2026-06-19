@@ -58,64 +58,41 @@ function Quick-Test {
 function Safe-Download {
     param([string]$Url, [string]$OutFile, [int]$MinSize = 1000)
     
+    # Already downloaded? Skip
+    if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt $MinSize) {
+        $sz = [math]::Round((Get-Item $OutFile).Length / 1MB, 1)
+        WSKP "Already downloaded - ${sz}MB"
+        return $true
+    }
     if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
     
-    # Method 1: WebClient with progress events
-    try {
-        WINF "Method 1: WebClient..."
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "HALEEM-ULTRA-Installer/3.1")
-        
-        $lastPct = -1
-        $dlDone = $false
-        Register-ObjectEvent $wc DownloadProgressChanged -Action {
-            $p = $EventArgs.ProgressPercentage
-            if ($p -ne $script:lastPct -and ($p % 5 -eq 0)) {
-                $script:lastPct = $p
-                $mb = [math]::Round($EventArgs.BytesReceived / 1MB, 1)
-                Show-Bar $p "${mb}MB"
-            }
-        } | Out-Null
-        Register-ObjectEvent $wc DownloadFileCompleted -Action { $script:dlDone = $true } | Out-Null
-        
-        $wc.DownloadFileAsync([Uri]$Url, $OutFile)
-        
-        $timeout = 600
-        $elapsed = 0
-        while (-not $dlDone -and $elapsed -lt $timeout) {
-            Start-Sleep -Milliseconds 500
-            $elapsed += 0.5
-        }
-        Write-Host ""
-        
-        Get-EventSubscriber | Unregister-Event -ErrorAction SilentlyContinue
-        
-        if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt $MinSize) { return $true }
-        $wc.Dispose()
-    } catch {
-        Write-Host ""
-        WINF "WebClient failed: $($_.Exception.Message)"
-        Get-EventSubscriber | Unregister-Event -ErrorAction SilentlyContinue
-    }
-    
-    # Method 2: curl.exe (shows own progress)
+    # Method 1: curl.exe (fastest, built-in progress bar)
     try {
         $curlExe = "C:\Windows\System32\curl.exe"
         if (Test-Path $curlExe) {
-            WINF "Method 2: curl.exe..."
-            if (Test-Path $OutFile) { Remove-Item $OutFile -Force }
+            WINF "Downloading via curl..."
             cmd /c "`"$curlExe`" -L -o `"$OutFile`" -# `"$Url`""
             if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt $MinSize) { return $true }
         }
-    } catch { WINF "curl.exe failed" }
+    } catch { WINF "curl failed, trying next..." }
+    
+    # Method 2: WebClient (sync, simple)
+    try {
+        WINF "Downloading via WebClient..."
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "HALEEM-ULTRA-Installer/3.1")
+        $wc.DownloadFile($Url, $OutFile)
+        $wc.Dispose()
+        if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt $MinSize) { return $true }
+    } catch { WINF "WebClient failed, trying next..." }
     
     # Method 3: Invoke-WebRequest
     try {
-        WINF "Method 3: Invoke-WebRequest..."
+        WINF "Downloading via Invoke-WebRequest..."
         if (Test-Path $OutFile) { Remove-Item $OutFile -Force }
         Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
         if ((Test-Path $OutFile) -and (Get-Item $OutFile).Length -gt $MinSize) { return $true }
-    } catch { WINF "Invoke-WebRequest failed" }
+    } catch { WINF "IWR failed, trying next..." }
     
     # Method 4: BitsTransfer
     try {
@@ -256,8 +233,8 @@ try {
 } catch { WINF "GitHub API unreachable, using fallback URL" }
 if (-not $PLUG_URL) { $PLUG_URL = "https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/v${PLUG_VER}/haleem-ultra-v${PLUG_VER}.zip" }
 
-if (Test-Path $TEMP_DIR) { Remove-Item $TEMP_DIR -Recurse -Force -ErrorAction SilentlyContinue }
-New-Item -ItemType Directory -Path $TEMP_DIR -Force | Out-Null
+# Don't delete temp - reuse downloaded files from failed runs
+if (-not (Test-Path $TEMP_DIR)) { New-Item -ItemType Directory -Path $TEMP_DIR -Force | Out-Null }
 
 # ═══════════════════════════════════════════════════════════
 #  STEP 1: Python 3.11
