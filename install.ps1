@@ -357,10 +357,11 @@ if (-not $nodeOK) {
     $dlOK = Safe-Download $nodeUrl $nodeInst 20000000
     if ($dlOK) {
         WINF "Installing Node.js (silent)..."
-        Start-Process msiexec.exe -ArgumentList "/i","`"$nodeInst`"","/quiet","/norestart" -Wait -NoNewWindow
+        $msiLog = "$TEMP_DIR\node-msi.log"
+        cmd /c "msiexec /i `"$nodeInst`" /quiet /norestart /log `"$msiLog`""
         Start-Sleep -Seconds 3
         if (Test-Path "C:\Program Files\nodejs\node.exe") { $NODE_EXE = "C:\Program Files\nodejs\node.exe"; WOK "Node.js installed" }
-        else { WWRN "Node.js install may need restart" }
+        else { WWRN "Node.js install may need restart. Log: $msiLog" }
     } else { WWRN "Node.js download failed" }
 }
 
