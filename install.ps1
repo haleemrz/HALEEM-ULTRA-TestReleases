@@ -155,12 +155,14 @@ function Safe-Extract {
     return $false
 }
 
-# ─── Run pip with live output ─────────────────────────────
+# ─── Run pip quietly ─────────────────────────────────
 function Run-Pip {
     param([string]$PipExe, [string[]]$PipArgs, [string]$Label)
     WINF "$Label"
     $allArgs = $PipArgs -join " "
-    cmd /c "`"$PipExe`" $allArgs"
+    cmd /c "`"$PipExe`" $allArgs --quiet" 2>$null
+    if ($LASTEXITCODE -eq 0) { WOK "$Label Done" }
+    else { WWRN "$Label - exit code $LASTEXITCODE" }
     return $LASTEXITCODE -eq 0
 }
 
@@ -776,9 +778,10 @@ foreach ($v in @("9","10","11","12")) {
 }
 if ($cepOK2) { WOK "CEP Debug"; $pass++ } else { WERR "CEP Debug"; $fail++ }
 
-# Imports
+# Imports - use cmd /c to properly inherit environment for DLL loading
 Write-Host ""
 Write-Host "  --- Package Imports ---" -ForegroundColor White
+$venvScripts = Split-Path $VENV_PY
 foreach ($pkg in @(
     @{N="torch";       C="import torch; print(torch.__version__)"},
     @{N="torchaudio";  C="import torchaudio; print(torchaudio.__version__)"},
@@ -790,8 +793,8 @@ foreach ($pkg in @(
     @{N="onnxruntime"; C="import onnxruntime; print(onnxruntime.__version__)"},
     @{N="pydantic";    C="import pydantic; print(pydantic.__version__)"}
 )) {
-    $r = Quick-Test $VENV_PY @("-c",$pkg.C)
-    if ($r.OK) { WOK "$($pkg.N) $($r.Out)"; $pass++ }
+    $ver = cmd /c "set PATH=$venvScripts;%PATH% && `"$VENV_PY`" -c `"$($pkg.C)`"" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $ver) { WOK "$($pkg.N) $ver"; $pass++ }
     else { WERR "$($pkg.N) FAILED"; $fail++ }
 }
 
