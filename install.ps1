@@ -549,11 +549,13 @@ WHDR 8 $TOTAL "Python virtual environment"
 $venvOK = $false
 
 if (Test-Path $VENV_PY) {
-    $vt = Quick-Test $VENV_PY @("-c","import sys; print(sys.prefix)")
-    if ($vt.OK) {
+    # Use cmd /c for reliable check (Quick-Test has PATH issues)
+    $venvScripts = Split-Path $VENV_PY
+    $vtOut = cmd /c "set PATH=$venvScripts;%PATH% && `"$VENV_PY`" -c `"import sys; print(sys.prefix)`"" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $vtOut) {
         # Also verify pip works
-        $pt = Quick-Test $PIP_EXE @("--version")
-        if ($pt.OK) {
+        $ptOut = cmd /c "`"$PIP_EXE`" --version" 2>$null
+        if ($LASTEXITCODE -eq 0) {
             WSKP ".venv OK"
             $venvOK = $true
         } else {
@@ -565,13 +567,28 @@ if (Test-Path $VENV_PY) {
 }
 
 if (-not $venvOK) {
-    # Remove old
+    # Kill any python processes that might lock files
+    Get-Process python* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    
+    # Remove old with retries
     if (Test-Path $VENV_DIR) {
         $vi = Get-Item $VENV_DIR -Force -ErrorAction SilentlyContinue
         if ($vi.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
             cmd /c "rmdir `"$VENV_DIR`"" | Out-Null
         } else {
-            Remove-Item $VENV_DIR -Recurse -Force -ErrorAction SilentlyContinue
+            for ($retry = 0; $retry -lt 3; $retry++) {
+                Remove-Item $VENV_DIR -Recurse -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path $VENV_DIR)) { break }
+                WINF "Retrying delete..."
+                Start-Sleep -Seconds 2
+                Get-Process python* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            }
+            if (Test-Path $VENV_DIR) {
+                WINF "Force deleting with cmd..."
+                cmd /c "rd /s /q `"$VENV_DIR`"" 2>$null
+                Start-Sleep -Seconds 1
+            }
         }
     }
     
@@ -610,30 +627,31 @@ if (-not $venvOK) {
 # ═══════════════════════════════════════════════════════════
 WHDR 9 $TOTAL "Python packages"
 
-# Check what's already installed
+# Check what's already installed (use cmd /c for reliable PATH)
 $torchOK = $false
 $pkgsOK  = $false
+$venvScripts = Split-Path $VENV_PY
 
-$tt = Quick-Test $VENV_PY @("-c","import torch; print(torch.__version__)")
-if ($tt.OK -and $tt.Out -match "2\.5\.1") {
-    WSKP "PyTorch OK: $($tt.Out)"
+$ttVer = cmd /c "set PATH=$venvScripts;%PATH% && `"$VENV_PY`" -c `"import torch; print(torch.__version__)`"" 2>$null
+if ($LASTEXITCODE -eq 0 -and $ttVer -match "2\.5\.1") {
+    WSKP "PyTorch OK: $ttVer"
     $torchOK = $true
 }
 
-$pt = Quick-Test $VENV_PY @("-c","import numpy,scipy,librosa,soundfile,whisper,onnxruntime,pydantic; print('OK')")
-if ($pt.OK -and $pt.Out -match "OK") {
+$ptOut = cmd /c "set PATH=$venvScripts;%PATH% && `"$VENV_PY`" -c `"import numpy,scipy,librosa,soundfile,whisper,onnxruntime,pydantic; print('OK')`"" 2>$null
+if ($LASTEXITCODE -eq 0 -and $ptOut -match "OK") {
     WSKP "All packages OK"
     $pkgsOK = $true
 }
 
 if (-not $torchOK -or -not $pkgsOK) {
     # Upgrade pip first
-    Run-Pip $PIP_EXE @("install","--isolated","--upgrade","pip") "Upgrading pip..."
+    $null = Run-Pip $PIP_EXE @("install","--isolated","--upgrade","pip") "Upgrading pip"
 }
 
 if (-not $torchOK) {
     WINF "Uninstalling old torch..."
-    Run-Pip $PIP_EXE @("uninstall","torch","torchaudio","-y") "Cleaning old torch..."
+    $null = Run-Pip $PIP_EXE @("uninstall","torch","torchaudio","-y") "Cleaning old torch"
     
     Write-Host ""
     Write-Host "  =============================================" -ForegroundColor Yellow
@@ -642,21 +660,21 @@ if (-not $torchOK) {
     Write-Host "  =============================================" -ForegroundColor Yellow
     Write-Host ""
     
-    Run-Pip $PIP_EXE @("install","--isolated","torch==2.5.1+cu121","torchaudio==2.5.1+cu121","--extra-index-url",$TORCH_IDX) "Installing PyTorch (CUDA 12.1)..."
+    $null = Run-Pip $PIP_EXE @("install","--isolated","torch==2.5.1+cu121","torchaudio==2.5.1+cu121","--extra-index-url",$TORCH_IDX) "Installing PyTorch"
     
-    $tt2 = Quick-Test $VENV_PY @("-c","import torch; print(torch.__version__)")
-    if ($tt2.OK) { WOK "PyTorch installed: $($tt2.Out)" }
+    $tt2Ver = cmd /c "set PATH=$venvScripts;%PATH% && `"$VENV_PY`" -c `"import torch; print(torch.__version__)`"" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $tt2Ver) { WOK "PyTorch installed: $tt2Ver" }
     else { WWRN "PyTorch may have issues" }
 }
 
 if (-not $pkgsOK) {
-    Run-Pip $PIP_EXE @("install","--isolated",$($PIP_PKGS -join " ")) "Installing packages..."
+    $null = Run-Pip $PIP_EXE @("install","--isolated",$($PIP_PKGS -join " ")) "Installing packages"
     
     $reqFile = Join-Path $PLUG_DIR "requirements.txt"
     if (Test-Path $reqFile) {
-        Run-Pip $PIP_EXE @("install","--isolated","-r","`"$reqFile`"") "Installing from requirements.txt..."
+        $null = Run-Pip $PIP_EXE @("install","--isolated","-r","`"$reqFile`"") "Installing from requirements.txt"
     }
-    WOK "Packages installed"
+    WOK "Packages step complete"
 }
 
 # ═══════════════════════════════════════════════════════════
