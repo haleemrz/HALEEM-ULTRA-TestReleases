@@ -209,7 +209,7 @@ Write-Host "  User:    $env:USERNAME" -ForegroundColor Gray
 Write-Host "  Profile: $env:USERPROFILE" -ForegroundColor Gray
 Write-Host "  OS:      $([System.Environment]::OSVersion.VersionString)" -ForegroundColor Gray
 Write-Host "  PS:      $($PSVersionTable.PSVersion)" -ForegroundColor Gray
-if ($_hasUnicode) { WWRN "Unicode username detected — using safe paths" }
+if ($_hasUnicode) { WWRN "Unicode username detected - using safe paths" }
 
 # ═══════════════════════════════════════════════════════════
 #  Configuration
@@ -282,7 +282,8 @@ foreach ($pc in $pyCandidates) {
             $pyFound = $true
             break
         } else {
-            WWRN "Found $pc but broken ($($t.Out) $($t.Err)). Skipping."
+            $tMsg = "$($t.Out) $($t.Err)"
+            WWRN "Found $pc but broken: $tMsg"
         }
     }
 }
@@ -383,7 +384,7 @@ if ($ffPath) {
     # Verify it works
     $ffTest = Quick-Test $ffPath @("-version")
     if ($ffTest.OK) {
-        # Check if in Unicode path → copy to safe location
+        # Check if in Unicode path - copy to safe location
         if ("$ffPath" -match '[^\x00-\x7F]') {
             WWRN "FFmpeg in Unicode path: $ffPath"
             $ffSrc = Split-Path $ffPath
@@ -397,7 +398,8 @@ if ($ffPath) {
         $ffDir = Split-Path $ffPath
         $mp = [System.Environment]::GetEnvironmentVariable("Path","Machine")
         if ($mp -notmatch [regex]::Escape($ffDir)) {
-            [System.Environment]::SetEnvironmentVariable("Path","$mp;$ffDir","Machine")
+            $newPath = "$mp;$ffDir"
+            [System.Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
             $env:Path = "$env:Path;$ffDir"
         }
         WOK "FFmpeg OK: $ffPath"
@@ -413,8 +415,10 @@ if (-not $ffOK) {
         $null = Get-Command winget -ErrorAction Stop
         WINF "Installing FFmpeg via winget..."
         cmd /c "winget install Gyan.FFmpeg --accept-package-agreements --accept-source-agreements --silent"
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        try { $null = Get-Command ffmpeg -ErrorAction Stop; WOK "FFmpeg installed"; $ffOK = $true } catch { WWRN "FFmpeg installed — restart to use" }
+        $mPath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+        $uPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+        $env:Path = "$mPath;$uPath"
+        try { $null = Get-Command ffmpeg -ErrorAction Stop; WOK "FFmpeg installed"; $ffOK = $true } catch { WWRN "FFmpeg installed - restart to use" }
     } catch { WWRN "Install FFmpeg manually: https://www.gyan.dev/ffmpeg/builds/" }
 }
 
@@ -460,10 +464,10 @@ if (Test-Path (Join-Path $PLUG_DIR "index.html")) {
         if (-not (Test-Path (Join-Path $PLUG_DIR $cf))) { $critOK = $false; break }
     }
     if ($critOK -and $fc -gt 300) {
-        WSKP "Plugin already installed and complete ($fc files)"
+        WSKP "Plugin already installed and complete - $fc files"
         $pluginReady = $true
     } else {
-        WWRN "Plugin incomplete ($fc files, missing critical files). Re-downloading..."
+        WWRN "Plugin incomplete: $fc files, missing criticals. Re-downloading..."
         Remove-Item $PLUG_DIR -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
@@ -503,7 +507,7 @@ if (-not $pluginReady) {
     
     if (Test-Path (Join-Path $PLUG_DIR "index.html")) {
         $fc = (Get-ChildItem $PLUG_DIR -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count
-        WOK "Plugin extracted ($fc files)"
+        WOK "Plugin extracted - $fc files"
         $pluginReady = $true
     } else {
         WERR "Extraction failed!"; return
@@ -525,9 +529,9 @@ if (Test-Path $brollMod) {
     # Verify it has content
     $modCount = (Get-ChildItem $brollMod -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
     if ($modCount -gt 5) {
-        WSKP "node_modules OK ($modCount packages)"
+        WSKP "node_modules OK - $modCount packages"
     } else {
-        WWRN "node_modules broken ($modCount packages). Reinstalling..."
+        WWRN "node_modules broken - $modCount packages. Reinstalling..."
         Remove-Item $brollMod -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
