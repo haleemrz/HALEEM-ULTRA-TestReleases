@@ -334,11 +334,21 @@ if (-not $nodeOK) {
     $dlOK = Safe-Download $nodeUrl $nodeInst 20000000
     if ($dlOK) {
         WINF "Installing Node.js (silent)..."
-        $msiLog = "$TEMP_DIR\node-msi.log"
-        cmd /c "msiexec /i `"$nodeInst`" /quiet /norestart /log `"$msiLog`""
-        Start-Sleep -Seconds 3
+        # Copy MSI to safe ASCII path to avoid short-path issues with msiexec
+        $safeMsi = "C:\haleem-temp\node-installer.msi"
+        if (-not (Test-Path "C:\haleem-temp")) { New-Item -ItemType Directory -Path "C:\haleem-temp" -Force | Out-Null }
+        Copy-Item $nodeInst $safeMsi -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $safeMsi)) { $safeMsi = $nodeInst }
+        
+        $msiProc = Start-Process msiexec.exe -ArgumentList "/i `"$safeMsi`" /quiet /norestart" -PassThru -NoNewWindow
+        $waited = $msiProc.WaitForExit(120000)  # 2 minute timeout
+        if (-not $waited) {
+            WWRN "MSI taking too long, killing..."
+            $msiProc.Kill()
+        }
+        Start-Sleep -Seconds 2
         if (Test-Path "C:\Program Files\nodejs\node.exe") { $NODE_EXE = "C:\Program Files\nodejs\node.exe"; WOK "Node.js installed" }
-        else { WWRN "Node.js install may need restart. Log: $msiLog" }
+        else { WWRN "Node.js install may need restart" }
     } else { WWRN "Node.js download failed" }
 }
 
