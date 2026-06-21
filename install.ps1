@@ -417,10 +417,11 @@ if ($needDownload) {
     # ═══════════════════════════════════════════════════════════
     WHDR 6 $TOTAL "Extract and install"
 
-    # Remove old installation
+    # Remove old installation (use rd /s /q for long paths)
     if (Test-Path $PLUG_DIR) {
         WINF "Removing old plugin..."
-        Remove-Item $PLUG_DIR -Recurse -Force -ErrorAction SilentlyContinue
+        cmd /c "rd /s /q `"$PLUG_DIR`"" 2>$null
+        if (Test-Path $PLUG_DIR) { Remove-Item $PLUG_DIR -Recurse -Force -ErrorAction SilentlyContinue }
     }
     if (Test-Path $VENV_DIR) {
         WINF "Removing old .venv..."
@@ -430,12 +431,12 @@ if ($needDownload) {
         if ($vi -and ($vi.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
             cmd /c "rmdir `"$VENV_DIR`"" | Out-Null
         } else {
-            for ($retry = 0; $retry -lt 3; $retry++) {
-                Remove-Item $VENV_DIR -Recurse -Force -ErrorAction SilentlyContinue
-                if (-not (Test-Path $VENV_DIR)) { break }
-                Start-Sleep -Seconds 2
+            cmd /c "rd /s /q `"$VENV_DIR`"" 2>$null
+            Start-Sleep -Seconds 1
+            if (Test-Path $VENV_DIR) {
+                WINF "Retrying delete..."
+                cmd /c "rd /s /q `"$VENV_DIR`"" 2>$null
             }
-            if (Test-Path $VENV_DIR) { cmd /c "rd /s /q `"$VENV_DIR`"" 2>$null }
         }
     }
 
