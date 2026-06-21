@@ -500,36 +500,52 @@ if ($needDownload) {
     WOK "ZIP removed - saved $zipSizeMB MB"
 }
 
-# Fix pyvenv.cfg to point to local Python (always needed after extract or on different machine)
+# Fix pyvenv.cfg to point to local Python (CRITICAL - always run)
 $cfgFile = Join-Path $VENV_DIR "pyvenv.cfg"
-if ((Test-Path $cfgFile) -and $PY_EXE) {
-    $pyDir = Split-Path $PY_EXE
-    $cfgContent = Get-Content $cfgFile -Raw
-    $needsFix = $false
-
-    # Check if home path matches current Python
-    if ($cfgContent -match 'home\s*=\s*(.+)') {
-        $currentHome = $Matches[1].Trim()
-        if ($currentHome -ne $pyDir) {
-            $needsFix = $true
+if (Test-Path $cfgFile) {
+    # Find Python if not already found
+    if (-not $PY_EXE -or -not (Test-Path $PY_EXE)) {
+        foreach ($p in @(
+            "C:\Python311\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+            "C:\Program Files\Python311\python.exe",
+            "C:\Program Files (x86)\Python311\python.exe"
+        )) {
+            if (Test-Path $p) { $PY_EXE = $p; break }
+        }
+        if (-not $PY_EXE) {
+            try { $pc = Get-Command python -ErrorAction Stop; $PY_EXE = $pc.Source } catch {}
         }
     }
 
-    if ($needsFix) {
-        WINF "Fixing .venv config for local Python path..."
-        $newCfg = @(
-            "home = $pyDir",
-            "include-system-site-packages = false",
-            "version = 3.11.9",
-            "executable = $PY_EXE",
-            "command = $PY_EXE -m venv $VENV_DIR"
-        )
-        $newCfg -join "`r`n" | Set-Content $cfgFile -Encoding ASCII
-        WOK "Fixed pyvenv.cfg -> $pyDir"
+    if ($PY_EXE -and (Test-Path $PY_EXE)) {
+        $pyDir = Split-Path $PY_EXE
+        $cfgContent = Get-Content $cfgFile -Raw
+        $needsFix = $true
+
+        if ($cfgContent -match 'home\s*=\s*(.+)') {
+            $currentHome = $Matches[1].Trim()
+            if ($currentHome -eq $pyDir) { $needsFix = $false }
+        }
+
+        if ($needsFix) {
+            WINF "Fixing .venv config for local Python path..."
+            $newCfg = @(
+                "home = $pyDir",
+                "include-system-site-packages = false",
+                "version = 3.11.9",
+                "executable = $PY_EXE",
+                "command = $PY_EXE -m venv $VENV_DIR"
+            )
+            $newCfg -join "`r`n" | Set-Content $cfgFile -Encoding ASCII
+            WOK "Fixed pyvenv.cfg -> $pyDir"
+        } else {
+            WSKP "pyvenv.cfg already correct"
+        }
     } else {
-        WSKP "pyvenv.cfg already correct"
+        WERR "Cannot find Python 3.11 - pyvenv.cfg not fixed!"
     }
-} else {
+} elseif (-not (Test-Path $VENV_DIR)) {
     WHDR 6 $TOTAL "Extract and install"
     WSKP "Already installed - skipping"
 }
