@@ -439,47 +439,50 @@ if ($needDownload) {
         }
     }
 
-    WINF "Extracting package (this takes a few minutes)..."
+    WINF "Extracting package..."
 
     $extractOK = $false
 
-    # Method 1: Expand-Archive
-    try {
-        Expand-Archive -Path $zipFile -DestinationPath $EXT_DIR -Force
-        $extractOK = $true
-        WOK "Extracted successfully"
-    } catch { WINF "Expand-Archive failed, trying .NET..." }
-
-    # Method 2: .NET ZipFile
-    if (-not $extractOK) {
+    # Method 1: tar.exe (FASTEST - built into Windows 10+)
+    if (Test-Path "C:\Windows\System32\tar.exe") {
+        WINF "Extracting via tar (fast)..."
         try {
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($zipFile, $EXT_DIR)
-            $extractOK = $true
-            WOK "Extracted via .NET"
-        } catch { WINF ".NET failed, trying 7-Zip..." }
+            Push-Location $EXT_DIR
+            cmd /c "tar.exe -xf `"$zipFile`""
+            if ($LASTEXITCODE -eq 0) { $extractOK = $true; WOK "Extracted via tar" }
+            Pop-Location
+        } catch { try { Pop-Location } catch {}; WINF "tar failed, trying next..." }
     }
 
-    # Method 3: 7-Zip
+    # Method 2: 7-Zip (fast if installed)
     if (-not $extractOK) {
         $7z = "C:\Program Files\7-Zip\7z.exe"
         if (Test-Path $7z) {
+            WINF "Extracting via 7-Zip..."
             cmd /c "`"$7z`" x `"$zipFile`" -o`"$EXT_DIR`" -y" | Out-Null
             if ($LASTEXITCODE -eq 0) { $extractOK = $true; WOK "Extracted via 7-Zip" }
         }
     }
 
-    # Method 4: tar
+    # Method 3: .NET ZipFile
     if (-not $extractOK) {
+        WINF "Extracting via .NET (slower)..."
         try {
-            if (Test-Path "C:\Windows\System32\tar.exe") {
-                Push-Location $EXT_DIR
-                cmd /c "tar.exe -xf `"$zipFile`""
-                Pop-Location
-                $extractOK = $true
-                WOK "Extracted via tar"
-            }
-        } catch { try { Pop-Location } catch {} }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($zipFile, $EXT_DIR)
+            $extractOK = $true
+            WOK "Extracted via .NET"
+        } catch { WINF ".NET failed, trying Expand-Archive..." }
+    }
+
+    # Method 4: Expand-Archive (slowest - last resort)
+    if (-not $extractOK) {
+        WINF "Extracting via Expand-Archive (this may be slow)..."
+        try {
+            Expand-Archive -Path $zipFile -DestinationPath $EXT_DIR -Force
+            $extractOK = $true
+            WOK "Extracted via Expand-Archive"
+        } catch { WINF "Expand-Archive failed" }
     }
 
     if (-not $extractOK) {
