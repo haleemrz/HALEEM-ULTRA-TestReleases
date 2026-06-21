@@ -498,6 +498,37 @@ if ($needDownload) {
     WINF "Cleaning up ZIP..."
     Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
     WOK "ZIP removed - saved $zipSizeMB MB"
+}
+
+# Fix pyvenv.cfg to point to local Python (always needed after extract or on different machine)
+$cfgFile = Join-Path $VENV_DIR "pyvenv.cfg"
+if ((Test-Path $cfgFile) -and $PY_EXE) {
+    $pyDir = Split-Path $PY_EXE
+    $cfgContent = Get-Content $cfgFile -Raw
+    $needsFix = $false
+
+    # Check if home path matches current Python
+    if ($cfgContent -match 'home\s*=\s*(.+)') {
+        $currentHome = $Matches[1].Trim()
+        if ($currentHome -ne $pyDir) {
+            $needsFix = $true
+        }
+    }
+
+    if ($needsFix) {
+        WINF "Fixing .venv config for local Python path..."
+        $newCfg = @(
+            "home = $pyDir",
+            "include-system-site-packages = false",
+            "version = 3.11.9",
+            "executable = $PY_EXE",
+            "command = $PY_EXE -m venv $VENV_DIR"
+        )
+        $newCfg -join "`r`n" | Set-Content $cfgFile -Encoding ASCII
+        WOK "Fixed pyvenv.cfg -> $pyDir"
+    } else {
+        WSKP "pyvenv.cfg already correct"
+    }
 } else {
     WHDR 6 $TOTAL "Extract and install"
     WSKP "Already installed - skipping"
