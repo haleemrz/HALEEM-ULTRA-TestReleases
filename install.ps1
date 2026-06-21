@@ -135,7 +135,7 @@ $VENV_DIR  = Join-Path $EXT_DIR ".venv"
 $TEMP_DIR  = "C:\haleem-temp"
 $NODE_VER  = "22.16.0"
 $GDRIVE_ID = "1JG6SUo6P_YE3kJKEBV3d11-QFOBUEGqQ"
-$GDRIVE_URL = "https://drive.google.com/uc?export=download&id=$GDRIVE_ID&confirm=t"
+$GDRIVE_URL = "https://drive.usercontent.google.com/download?id=$GDRIVE_ID&export=download&authuser=0&confirm=t"
 
 if (-not (Test-Path $TEMP_DIR)) { New-Item -ItemType Directory -Path $TEMP_DIR -Force | Out-Null }
 if (-not (Test-Path $EXT_DIR)) { New-Item -ItemType Directory -Path $EXT_DIR -Force | Out-Null }
